@@ -2,7 +2,7 @@
 
 This repository provides a comprehensive collection of **Kafka Streams** patterns and operations. It has been extended from a basic examples repository into a full guide covering everything from fundamental stateless operations to advanced topics like Exactly-Once Semantics (EOS), low-level Processor APIs, and Interactive Queries.
 
-## 🚀 Examples Overview
+## Examples Overview
 
 All examples are standalone, runnable Java applications (`main` methods) organized by package under `src/main/java/com/learning/kafkastreaming/`.
 
