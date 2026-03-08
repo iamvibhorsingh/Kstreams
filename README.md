@@ -43,7 +43,7 @@ These are complete end-to-end applications demonstrating specific business scena
 - **Chapter 5 (Predictions):** Enriching streams via external HTTP calls (Sentiment Prediction with NLP).
 - **Chapter 6 (Views):** Keeping track of topics with maximum views using hopping windows and Redis.
 
-## ⚙️ Setup and Prerequisites
+## Setup and Prerequisites
 
 ### 1. Requirements
 * Java 11 or higher
@@ -68,7 +68,7 @@ cd KafkaStreamsStreamingPatterns
 mvn clean compile
 ```
 
-## 🏃 Running the Examples
+## Running the Examples
 Each file contains a `main` method. You can run them directly from your IDE (IntelliJ, Eclipse, VSCode) or via maven exec. 
 
 For example, to run the Basic Operations example:
@@ -76,7 +76,7 @@ For example, to run the Basic Operations example:
 mvn exec:java -Dexec.mainClass="com.learning.kafkastreaming.basics.BasicOperations"
 ```
 
-## 🛠️ Built With
+## Built With
 - **Kafka Streams** (2.6.0)
 - **Java** 11
 - **Jackson** (JSON Serialization)
