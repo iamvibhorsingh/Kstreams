@@ -13,7 +13,7 @@ import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 
 /**
- * Demonstrates how to configure Kafka Streams for Exactly-Once Semantics (EOS).
+ * Demonstrates Exactly-Once Semantics (EOS V2) configuration in Kafka Streams 3.x.
  */
 public class ExactlyOnceProcessing {
 
@@ -22,16 +22,12 @@ public class ExactlyOnceProcessing {
         props.put(StreamsConfig.APPLICATION_ID_CONFIG, "eos-app");
         props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
 
-        // Enable Exactly-Once Semantic (EOS)
-        // In Kafka Streams 2.6+, EXACTLY_ONCE (eos-v1) or EXACTLY_ONCE_BETA (eos-v2) is
-        // used.
-        // In Kafka Streams 3.0+, EXACTLY_ONCE_V2 is the standard.
-        // This configuration automatically sets idempotent producers, transactional
-        // IDs, and read_committed isolation level.
-        props.put(StreamsConfig.PROCESSING_GUARANTEE_CONFIG, StreamsConfig.EXACTLY_ONCE);
+        // Enable modern Exactly-Once Semantics (EOS V2)
+        // EXACTLY_ONCE_V2 drastically reduces internal transactional overhead,
+        // using single transaction coordinators and read_committed isolation level.
+        props.put(StreamsConfig.PROCESSING_GUARANTEE_CONFIG, StreamsConfig.EXACTLY_ONCE_V2);
 
-        // Optional: reduce commit interval for faster testing (default for EOS is
-        // 100ms)
+        // Commit interval for EOS defaults to 100ms
         props.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 100);
 
         StreamsBuilder builder = new StreamsBuilder();
@@ -39,8 +35,8 @@ public class ExactlyOnceProcessing {
         KStream<String, String> eosStream = builder.stream("eos-input-topic",
                 Consumed.with(Serdes.String(), Serdes.String()));
 
-        // Exactly-once applies to both state stores (RocksDB) and output records.
-        eosStream.mapValues(value -> value.toUpperCase())
+        // Exactly-once applies end-to-end: state stores (changelogs/RocksDB) and output sinks
+        eosStream.mapValues(value -> value != null ? value.toUpperCase() : "")
                 .to("eos-output-topic", Produced.with(Serdes.String(), Serdes.String()));
 
         Topology topology = builder.build();

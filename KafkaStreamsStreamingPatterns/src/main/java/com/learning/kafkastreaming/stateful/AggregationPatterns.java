@@ -22,7 +22,8 @@ import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 
 /**
- * Demonstrates aggregate with Initializer/Aggregator and Windowing Patterns.
+ * Demonstrates aggregate with Initializer/Aggregator and Windowing Patterns
+ * (Global, Session, and Hopping windows) using modern Kafka 3.x APIs.
  */
 public class AggregationPatterns {
 
@@ -35,44 +36,41 @@ public class AggregationPatterns {
         KStream<String, String> userActions = builder.stream("user-actions",
                 Consumed.with(Serdes.String(), Serdes.String()));
 
-        // We want to concatenate actions done by each user into a single CSV string.
+        // Concatenate user actions into a comma-separated aggregate string
         Initializer<String> actionInitializer = () -> "";
 
         Aggregator<String, String, String> actionAggregator =
-                // key, new value, existing aggregate
                 (userId, newAction, aggregatedActions) -> {
-                    if (aggregatedActions.isEmpty()) {
+                    if (aggregatedActions == null || aggregatedActions.isEmpty()) {
                         return newAction;
                     } else {
                         return aggregatedActions + "," + newAction;
                     }
                 };
 
-        // 1. Global Aggregation (no window)
+        // 1. Global Stateful Aggregation (unbounded cumulative state)
         KTable<String, String> totalActions = userActions
                 .groupByKey(Grouped.with(Serdes.String(), Serdes.String()))
                 .aggregate(actionInitializer, actionAggregator, Materialized.with(Serdes.String(), Serdes.String()));
 
-        // 2. Session Windows
-        // Groups periods of activity separated by gaps of inactivity (e.g., 5 minutes)
+        // 2. Session Windows: groups activity bursts separated by inactivity gaps (e.g. 5m)
         KTable<Windowed<String>, String> sessionActions = userActions
                 .groupByKey(Grouped.with(Serdes.String(), Serdes.String()))
-                .windowedBy(SessionWindows.with(Duration.ofMinutes(5)))
+                .windowedBy(SessionWindows.ofInactivityGapWithNoGrace(Duration.ofMinutes(5)))
                 .aggregate(actionInitializer, actionAggregator,
-                        // When using session windows, we also need a Session Merger
+                        // Session merger merges two sessions when a late record bridges the gap
                         (sessionKey, aggOne, aggTwo) -> aggOne + "," + aggTwo,
                         Materialized.with(Serdes.String(), Serdes.String()));
 
-        // 3. Hopping Windows
-        // 5 minute windows that advance/hop every 1 minute
+        // 3. Hopping Windows (5 minute window hopping every 1 minute)
+        // Modern TimeWindows API (replaces deprecated TimeWindows.of(Duration))
         userActions
                 .groupByKey(Grouped.with(Serdes.String(), Serdes.String()))
-                .windowedBy(TimeWindows.of(Duration.ofMinutes(5)).advanceBy(Duration.ofMinutes(1)))
+                .windowedBy(TimeWindows.ofSizeWithNoGrace(Duration.ofMinutes(5)).advanceBy(Duration.ofMinutes(1)))
                 .count(Materialized.as("hopping-window-counts"));
 
         totalActions.toStream().to("total-actions-output", Produced.with(Serdes.String(), Serdes.String()));
 
-        // Output Windowed KTable to stream
         sessionActions.toStream()
                 .selectKey((windowedKey, value) -> windowedKey.key() + "@" + windowedKey.window().start())
                 .to("session-actions-output", Produced.with(Serdes.String(), Serdes.String()));

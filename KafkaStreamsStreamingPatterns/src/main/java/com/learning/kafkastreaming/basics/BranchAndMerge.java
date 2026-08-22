@@ -5,14 +5,19 @@ import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.Topology;
+import org.apache.kafka.streams.kstream.Branched;
+import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.KStream;
+import org.apache.kafka.streams.kstream.Named;
 import org.apache.kafka.streams.kstream.Produced;
 
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 
 /**
- * Demonstrates stream splitting (branching) and merging.
+ * Demonstrates modern stream splitting (branching) using split().branch() (KIP-632)
+ * and stream merging.
  */
 public class BranchAndMerge {
 
@@ -24,37 +29,30 @@ public class BranchAndMerge {
         props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass().getName());
 
         StreamsBuilder builder = new StreamsBuilder();
-        KStream<String, String> sourceStream = builder.stream("branching-input-topic");
+        KStream<String, String> sourceStream = builder.stream("branching-input-topic",
+                Consumed.with(Serdes.String(), Serdes.String()));
 
-        // 1. Branching: splitting a stream into multiple streams based on predicates
-        // NOTE: In Kafka Streams 2.8+, this array method is deprecated and replaced by
-        // KStream.split().branch()
-        @SuppressWarnings("unchecked")
-        KStream<String, String>[] branches = sourceStream.branch(
-                (key, value) -> value != null && value.startsWith("A"), // Index 0: 'A' words
-                (key, value) -> value != null && value.startsWith("B"), // Index 1: 'B' words
-                (key, value) -> true // Index 2: Default catch-all
-        );
+        // 1. Fluent Branching with split() (replaces deprecated branch(Predicate...))
+        Map<String, KStream<String, String>> branches = sourceStream.split(Named.as("route-"))
+                .branch((key, value) -> value != null && value.startsWith("A"), Branched.as("A"))
+                .branch((key, value) -> value != null && value.startsWith("B"), Branched.as("B"))
+                .defaultBranch(Branched.as("default"));
 
-        KStream<String, String> aStream = branches[0];
-        KStream<String, String> bStream = branches[1];
-        KStream<String, String> defaultStream = branches[2];
+        KStream<String, String> aStream = branches.get("route-A");
+        KStream<String, String> bStream = branches.get("route-B");
+        KStream<String, String> defaultStream = branches.get("route-default");
 
-        // 2. We can route distinct branches to different topics
+        // 2. Route distinct branches to individual topics
         aStream.to("topic-A", Produced.with(Serdes.String(), Serdes.String()));
         bStream.to("topic-B", Produced.with(Serdes.String(), Serdes.String()));
         defaultStream.to("topic-default", Produced.with(Serdes.String(), Serdes.String()));
 
-        // 3. Merging streams back together
-        // bStream is merged back into aStream resulting in a single stream combining
-        // both
+        // 3. Merging branches back together
         KStream<String, String> mergedStream = aStream.merge(bStream);
 
-        // Let's repartition just to demonstrate (useful before aggregations where keys
-        // changed)
-        // Here we just use a selectKey to trigger internal repartitioning
+        // Repartition on key transformation
         mergedStream
-                .selectKey((key, value) -> value.substring(0, 1))
+                .selectKey((key, value) -> value != null && !value.isEmpty() ? value.substring(0, 1) : "UNKNOWN")
                 .to("topic-merged", Produced.with(Serdes.String(), Serdes.String()));
 
         Topology topology = builder.build();

@@ -12,11 +12,14 @@ import org.apache.kafka.streams.kstream.Produced;
 import org.apache.kafka.streams.processor.StreamPartitioner;
 import org.apache.kafka.streams.processor.TimestampExtractor;
 
+import java.util.Collections;
+import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 
 /**
- * Demonstrates custom partitioners and timestamp extractors.
+ * Demonstrates custom partitioners and custom timestamp extractors in Kafka Streams 3.x.
  */
 public class CustomPartitioner {
 
@@ -25,16 +28,16 @@ public class CustomPartitioner {
         props.put(StreamsConfig.APPLICATION_ID_CONFIG, "custom-partitioner-app");
         props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
 
-        // Define default timestamp extractor at the application level
+        // Define application-level default timestamp extractor
         props.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG, PayloadTimestampExtractor.class.getName());
 
         StreamsBuilder builder = new StreamsBuilder();
 
-        // The input topics will use the PayloadTimestampExtractor to define event time
+        // Input topic uses PayloadTimestampExtractor for event-time tracking
         KStream<String, String> stream = builder.stream("partitioner-input-topic",
                 Consumed.with(Serdes.String(), Serdes.String()));
 
-        // Write to output using a custom stream partitioner
+        // Sink records with custom stream partitioner
         stream.to(
                 "partitioner-output-topic",
                 Produced.with(Serdes.String(), Serdes.String(), new FirstLetterPartitioner()));
@@ -60,43 +63,43 @@ public class CustomPartitioner {
     }
 
     /**
-     * Custom Partitioner that routes records based on the first letter of the
-     * value.
+     * Modern StreamPartitioner implementation supporting both partitions and partition.
      */
     public static class FirstLetterPartitioner implements StreamPartitioner<String, String> {
         @Override
-        public Integer partition(String topic, String key, String value, int numPartitions) {
-            String sanitizedValue = value != null ? value.trim() : "";
-            if (sanitizedValue.isEmpty()) {
-                return 0; // default to partition 0
-            }
-            char firstChar = sanitizedValue.charAt(0);
+        public Optional<Set<Integer>> partitions(String topic, String key, String value, int numPartitions) {
+            int p = partition(topic, key, value, numPartitions);
+            return Optional.of(Collections.singleton(p));
+        }
 
-            // Basic hashing logic over the first char
+        @Override
+        public Integer partition(String topic, String key, String value, int numPartitions) {
+            if (value == null || value.trim().isEmpty()) {
+                return 0;
+            }
+            char firstChar = value.trim().charAt(0);
             return Math.abs((int) firstChar) % numPartitions;
         }
     }
 
     /**
-     * Custom Timestamp Extractor to extract timestamp from the payload instead of
-     * record metadata.
+     * Custom Timestamp Extractor to extract timestamp embedded directly in the CSV payload.
      */
     public static class PayloadTimestampExtractor implements TimestampExtractor {
         @Override
         public long extract(ConsumerRecord<Object, Object> record, long partitionTime) {
-            // Assume the payload is a CSV: "timestampInMillis,event,..."
+            // Assume CSV format: "timestampInMillis,eventData,..."
             String value = (String) record.value();
             if (value != null) {
                 String[] parts = value.split(",");
                 if (parts.length > 0) {
                     try {
-                        return Long.parseLong(parts[0]);
-                    } catch (NumberFormatException e) {
-                        // ignore and fallback
+                        return Long.parseLong(parts[0].trim());
+                    } catch (NumberFormatException ignored) {
+                        // Fall through to partitionTime fallback
                     }
                 }
             }
-            // Fallback to the partition time if payload does not have a timestamp
             return partitionTime;
         }
     }

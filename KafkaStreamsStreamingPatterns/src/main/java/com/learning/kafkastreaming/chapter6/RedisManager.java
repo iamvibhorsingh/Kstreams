@@ -1,10 +1,9 @@
 package com.learning.kafkastreaming.chapter6;
 
 import redis.clients.jedis.Jedis;
-import redis.clients.jedis.Tuple;
+import redis.clients.jedis.resps.Tuple;
 
-import java.util.Iterator;
-import java.util.Set;
+import java.util.List;
 
 public class RedisManager implements Runnable {
 
@@ -19,80 +18,64 @@ public class RedisManager implements Runnable {
     public static final String ANSI_PURPLE = "\u001B[35m";
     public static final String ANSI_BLUE = "\u001B[34m";
 
-    private static String lbKey = "topics-leaderboard";
+    private static final String lbKey = "topics-leaderboard";
 
     private Jedis jedis;
 
     public static void main(String[] args) {
-
         RedisManager rmgr = new RedisManager();
         rmgr.setUp();
         Thread testThread = new Thread(rmgr);
         testThread.start();
 
-        //Testing the leaderboard.
-        //Redis connections are not threadsafe.
-        //Open new connection for writing.
-        Jedis jedisWriter = new Jedis("localhost");
-        try {
-            jedisWriter.zincrby(lbKey,2,"AI");
-            jedisWriter.zincrby(lbKey,3,"Big Data");
-            Thread.currentThread().sleep(6000);
-            jedisWriter.zincrby(lbKey,1,"Cloud");
-            jedisWriter.zincrby(lbKey,2,"AI");
-        }
-        catch(Exception e) {
+        try (Jedis jedisWriter = new Jedis("localhost", 6379)) {
+            jedisWriter.zincrby(lbKey, 2, "AI");
+            jedisWriter.zincrby(lbKey, 3, "Big Data");
+            Thread.sleep(6000);
+            jedisWriter.zincrby(lbKey, 1, "Cloud");
+            jedisWriter.zincrby(lbKey, 2, "AI");
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    //Create a connection and reset the leaderboard
     public void setUp() {
-        try{
-            //Jedis running on localhost and port 6379
-            jedis =new Jedis("localhost");
-            //reset the key
+        try {
+            jedis = new Jedis("localhost", 6379);
             jedis.del(lbKey);
             System.out.println("Redis connection setup successfully");
-        }
-        catch(Exception e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
     public void update_score(String product, double count) {
-        jedis.zincrby(lbKey,count,product);
+        if (jedis != null) {
+            jedis.zincrby(lbKey, count, product);
+        }
     }
 
+    @Override
     public void run() {
-
         try {
-            while (true) {
-
-                //Query the leaderboard and print the results
-                Set<Tuple> scores=
-                        jedis.zrevrangeWithScores(
-                                lbKey,0,-1);
-
-                Iterator<Tuple> iScores = scores.iterator();
-                int position=1;
-
-                while (iScores.hasNext()) {
-                    Tuple score= iScores.next();
-                    System.out.println(
-                            ANSI_BLUE + "Trending Topics - " + position + " : "
-                            +  score.getElement() + " = " + score.getScore()
-                            + ANSI_RESET);
-                    position++;
+            while (!Thread.currentThread().isInterrupted()) {
+                if (jedis != null) {
+                    List<Tuple> scores = jedis.zrevrangeWithScores(lbKey, 0, -1);
+                    int position = 1;
+                    for (Tuple score : scores) {
+                        System.out.println(
+                                ANSI_BLUE + "Trending Topics - " + position + " : "
+                                        + score.getElement() + " = " + score.getScore()
+                                        + ANSI_RESET);
+                        position++;
+                    }
                 }
-
-                Thread.currentThread().sleep(5000);
+                Thread.sleep(5000);
             }
-        }
-        catch(Exception e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
             e.printStackTrace();
         }
-
     }
-
 }

@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.learning.kafkastreaming.testing.AggregationTopologyTest
+-------------------------------------------------------------------------------
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.446 s -- in com.learning.kafkastreaming.testing.AggregationTopologyTest
